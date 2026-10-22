@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B 样条：设计目标、递推与归纳证明 · Quick Reminder</title>
+<script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre','code']}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+:root{--ink:#24313b;--muted:#64717b;--accent:#177e78;--line:#e2e6e5;--paper:#fff;--bg:#f5f6f3}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.9 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}main{max-width:980px;margin:48px auto;padding:54px 64px;background:var(--paper);border:1px solid var(--line);border-radius:16px}header{padding-bottom:28px;border-bottom:1px solid var(--line)}.eyebrow{color:var(--accent);font-size:12px;letter-spacing:2px;font-weight:700}h1{font-size:36px;line-height:1.4;margin:12px 0}h2{font-size:25px;margin:0 0 22px}h3{font-size:19px;margin:28px 0 12px}p{margin:12px 0}section{padding:36px 0;border-bottom:1px solid var(--line);scroll-margin-top:24px}.lead,.muted{color:var(--muted)}nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}nav a{font-size:13px;text-decoration:none;color:var(--accent);background:#edf6f3;padding:6px 12px;border-radius:7px}.note{border-left:3px solid var(--accent);background:#f1f8f6;padding:12px 18px;margin:20px 0}.eq{overflow-x:auto;padding:4px 0}table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}figure{margin:22px 0;background:#fafbf9;padding:12px;border:1px solid var(--line);border-radius:10px}figure svg{width:100%;height:auto;display:block}figcaption{font-size:13px;color:var(--muted);padding:0 10px 8px}.step{font-size:12px;color:var(--accent);font-weight:700;letter-spacing:1px}details{margin:20px 0;padding:16px 20px;border:1px solid var(--line);border-radius:9px}summary{cursor:pointer;font-weight:600}code{background:#f0f2f1;padding:2px 5px;border-radius:4px;font-size:.9em}footer{font-size:13px;color:var(--muted);padding-top:25px}li{margin:8px 0}@media(max-width:700px){main{margin:0;padding:30px 20px;border:0;border-radius:0}h1{font-size:28px}h2{font-size:22px}th,td{padding:9px 5px}body{font-size:15px}}@media print{body{background:white}main{border:0;margin:0;padding:20px;max-width:none}nav{display:none}details{break-inside:avoid}figure{break-inside:avoid}}
+</style></head><body><main>
+<header><div class="eyebrow">QUICK REMINDER / MATHEMATICS</div><h1>B 样条：从构造目标到递推证明</h1><p class="lead">先明确想造什么，再看递推如何造出来，最后解释为什么任意次数都成立。</p><nav><a href="#goals">01 设计目标</a><a href="#recurrence">02 递推公式</a><a href="#examples">03 零次 → 一次 → 二次</a><a href="#proof">04 归纳证明</a></nav></header>
+<section id="goals"><div class="step">01 / DESIGN</div><h2>我们想构造怎样的基函数？</h2>
+<p>给定严格递增的节点 \(t_0&lt;t_1&lt;\cdots&lt;t_m\)，构造一组局部基函数 \(B_{i,k}(x)\)，用系数加权表示曲线：</p>
+<div class="eq">$$s(x)=\sum_i c_iB_{i,k}(x).$$</div>
+<p>\(i\) 表示位置；\(k\) 表示<strong>多项式次数（degree）</strong>。构造基函数时尚未拟合数据；拟合是在基函数确定后选择系数 \(c_i\)。有些资料用 order 表示 \(k+1\)，阅读时需区分。</p>
+<table><thead><tr><th>设计目标</th><th>具体要求</th><th>用途</th></tr></thead><tbody>
+<tr><td>分段多项式</td><td>每个节点区间上次数不超过 \(k\)</td><td>每一段都容易计算和求导</td></tr>
+<tr><td>局部支撑</td><td>\(x\notin[t_i,t_{i+k+1})\) 时取零</td><td>改一个系数只影响附近区域</td></tr>
+<tr><td>平滑连接</td><td>简单节点处具有 \(C^{k-1}\) 连续性，\(k\ge1\)</td><td>升一次，增加一阶连续性</td></tr>
+<tr><td>非负</td><td>\(B_{i,k}(x)\ge0\)</td><td>系数参与非负加权</td></tr>
+<tr><td>单位分解</td><td>完整覆盖的内部区域内 \(\sum_iB_{i,k}(x)=1\)</td><td>相同系数能精确表示常数</td></tr>
+</tbody></table>
+<div class="note"><strong>两个容易混淆的点：</strong>二次是 \(C^1\)，不保证二阶导数连续；归一化要求是“一组函数加起来为一”，并非“每个函数的峰值为一”。</div>
+<p class="muted">本文使用不重复节点。重复节点会改变连续性；有限节点向量边界处需考虑覆盖范围及端点约定。支撑的闭包为 \([t_i,t_{i+k+1}]\)。</p></section>
+<section id="recurrence"><div class="step">02 / CONSTRUCTION</div><h2>Cox–de Boor 递推公式</h2>
+<h3>起点：零次区间指示函数</h3>
+<div class="eq">$$B_{i,0}(x)=\begin{cases}1,&t_i\le x&lt;t_{i+1},\\0,&\text{其他位置}.\end{cases}$$</div>
+<h3>升次：两个相邻低次基函数的线性加权</h3>
+<div class="eq">$$\boxed{B_{i,k}(x)=\frac{x-t_i}{t_{i+k}-t_i}B_{i,k-1}(x)+\frac{t_{i+k+1}-x}{t_{i+k+1}-t_{i+1}}B_{i+1,k-1}(x)},\quad k\ge1.$$</div>
+<p>左项使用位置 \(i\) 的低次基函数，右项使用相邻位置 \(i+1\) 的低次基函数。<strong>分段 \((k-1)\) 次多项式乘上线性函数，得到分段 \(k\) 次多项式。</strong>平滑性提高一阶需要额外证明，不能仅由这个乘法判断。</p>
+<p class="muted">这里严格递增的节点保证分母非零。在允许重复节点的标准定义中，分母为零的对应项约定为零。</p></section>
+<section id="examples"><div class="step">03 / WORKED EXAMPLES</div><h2>把公式实际用到零次、一次和二次</h2>
+<p>本节使用单位间距节点 \(t_j=j\)，关注 \(B_{0,k}\)。图中绿色实线是最终基函数，金色与紫色虚线是递推式中的左右贡献。</p>
+<h3>零次：一个区间开关</h3>
+<div class="eq">$$B_{0,0}(x)=\begin{cases}1,&0\le x&lt;1,\\0,&\text{其他位置}.\end{cases}$$</div>
+<figure><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="648pt" height="194.4pt" viewBox="0 0 648 194.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-22T20:41:53.706647</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.9.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 194.4 
+L 648 194.4 
+L 648 0 
+L 0 0 
+L 0 194.4 
+z
+" style="fill: none; opacity: 0"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 43.45 149.92 
+L 636.12 149.92 
+L 636.12 11.88 
+L 43.45 11.88 
+L 43.45 149.92 
+z
+" style="fill: none"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 105.836316 149.92 
+L 105.836316 11.88 
+" clip-path="url(#p9cf885c152)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 261.802105 149.92 
+L 261.802105 11.88 
+" clip-path="url(#p9cf885c152)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_3">
+    <path d="M 417.767895 149.92 
+L 417.767895 11.88 
+" clip-path="url(#p9cf885c152)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_4">
+    <path d="M 573.733684 149.92 
+L 573.733684 11.88 
+" clip-path="url(#p9cf885c152)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_5"/>
+     <g id="text_1">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="105.836316" y="165.278281" transform="rotate(-0 105.836316 165.278281)">0</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_6"/>
+     <g id="text_2">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="261.802105" y="165.278281" transform="rotate(-0 261.802105 165.278281)">1</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_7"/>
+     <g id="text_3">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="417.767895" y="165.278281" transform="rotate(-0 417.767895 165.278281)">2</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_8"/>
+     <g id="text_4">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="573.733684" y="165.278281" transform="rotate(-0 573.733684 165.278281)">3</text>
+     </g>
+    </g>
+    <g id="text_5">
+     <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="339.785" y="179.924219" transform="rotate(-0 339.785 179.924219)">x</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_9"/>
+     <g id="text_6">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="146.368901" transform="rotate(-0 36.45 146.368901)">0.00</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_10"/>
+     <g id="text_7">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="91.152901" transform="rotate(-0 36.45 91.152901)">0.50</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_11"/>
+     <g id="text_8">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="63.544901" transform="rotate(-0 36.45 63.544901)">0.75</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_12"/>
+     <g id="text_9">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="35.936901" transform="rotate(-0 36.45 35.936901)">1.00</text>
+     </g>
+    </g>
+   </g>
+   <g id="line2d_13">
+    <path d="M 43.45 142.18976 
+L 105.836316 142.18976 
+" clip-path="url(#p9cf885c152)" style="fill: none; stroke: #177e78; stroke-width: 2.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_14">
+    <path d="M 105.836316 31.75776 
+L 261.802105 31.75776 
+" clip-path="url(#p9cf885c152)" style="fill: none; stroke: #177e78; stroke-width: 2.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_15">
+    <path d="M 261.802105 142.18976 
+L 636.12 142.18976 
+" clip-path="url(#p9cf885c152)" style="fill: none; stroke: #177e78; stroke-width: 2.7; stroke-linecap: square"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 43.45 149.92 
+L 636.12 149.92 
+" style="fill: none; stroke: #d1d5db; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="PathCollection_1">
+    <defs>
+     <path id="m4a8de1228d" d="M 0 3.082207 
+C 0.817411 3.082207 1.601453 2.757446 2.179449 2.179449 
+C 2.757446 1.601453 3.082207 0.817411 3.082207 0 
+C 3.082207 -0.817411 2.757446 -1.601453 2.179449 -2.179449 
+C 1.601453 -2.757446 0.817411 -3.082207 0 -3.082207 
+C -0.817411 -3.082207 -1.601453 -2.757446 -2.179449 -2.179449 
+C -2.757446 -1.601453 -3.082207 -0.817411 -3.082207 0 
+C -3.082207 0.817411 -2.757446 1.601453 -2.179449 2.179449 
+C -1.601453 2.757446 -0.817411 3.082207 0 3.082207 
+z
+" style="stroke: #177e78"/>
+    </defs>
+    <g clip-path="url(#p9cf885c152)">
+     <use xlink:href="#m4a8de1228d" x="105.836316" y="31.75776" style="fill: #177e78; stroke: #177e78"/>
+     <use xlink:href="#m4a8de1228d" x="261.802105" y="142.18976" style="fill: #177e78; stroke: #177e78"/>
+    </g>
+   </g>
+   <g id="PathCollection_2">
+    <defs>
+     <path id="m9f7a3c3347" d="M 0 3.082207 
+C 0.817411 3.082207 1.601453 2.757446 2.179449 2.179449 
+C 2.757446 1.601453 3.082207 0.817411 3.082207 0 
+C 3.082207 -0.817411 2.757446 -1.601453 2.179449 -2.179449 
+C 1.601453 -2.757446 0.817411 -3.082207 0 -3.082207 
+C -0.817411 -3.082207 -1.601453 -2.757446 -2.179449 -2.179449 
+C -2.757446 -1.601453 -3.082207 -0.817411 -3.082207 0 
+C -3.082207 0.817411 -2.757446 1.601453 -2.179449 2.179449 
+C -1.601453 2.757446 -0.817411 3.082207 0 3.082207 
+z
+" style="stroke: #177e78"/>
+    </defs>
+    <g clip-path="url(#p9cf885c152)">
+     <use xlink:href="#m9f7a3c3347" x="105.836316" y="142.18976" style="fill: #ffffff; stroke: #177e78"/>
+     <use xlink:href="#m9f7a3c3347" x="261.802105" y="31.75776" style="fill: #ffffff; stroke: #177e78"/>
+    </g>
+   </g>
+   <g id="legend_1">
+    <g id="line2d_16">
+     <path d="M 572.76 23.67 
+L 581.76 23.67 
+L 590.76 23.67 
+" style="fill: none; stroke: #177e78; stroke-width: 2.7; stroke-linecap: square"/>
+    </g>
+    <g id="text_10">
+     <!-- $B_{0,0}(x)$ -->
+     <g transform="translate(597.96 26.82)">
+      <text>
+       <tspan style="font: oblique 9px 'DejaVu Sans'" x="0 21.178125" y="-0.171875">Bx</tspan>
+       <tspan style="font: 6.3px 'DejaVu Sans'" x="6.174316 10.182568 13.412549" y="1.3046875">0,0</tspan>
+       <tspan style="font: 9px 'DejaVu Sans'" x="17.666895 26.504297" y="-0.171875">()</tspan>
+      </text>
+     </g>
+    </g>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p9cf885c152">
+   <rect x="43.45" y="11.88" width="592.67" height="138.04"/>
+  </clipPath>
+ </defs>
+</svg>
+<figcaption>零次：区间内为一，区间外为零；实心点包含端点，空心点不包含端点。</figcaption></figure>
+<h3>一次：两个区间开关，拼成一座帐篷</h3>
+<div class="eq">$$B_{0,1}(x)=xB_{0,0}(x)+(2-x)B_{1,0}(x).$$</div>
+<p>在 \([0,1)\)，只有第一个开关开启；在 \([1,2)\)，只有第二个开关开启：</p>
+<div class="eq">$$B_{0,1}(x)=\begin{cases}x,&0\le x&lt;1,\\2-x,&1\le x&lt;2,\\0,&\text{其他位置}.\end{cases}$$</div>
+<figure><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="648pt" height="194.4pt" viewBox="0 0 648 194.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-22T20:41:53.740575</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.9.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 194.4 
+L 648 194.4 
+L 648 0 
+L 0 0 
+L 0 194.4 
+z
+" style="fill: none; opacity: 0"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 43.45 149.92 
+L 636.12 149.92 
+L 636.12 11.88 
+L 43.45 11.88 
+L 43.45 149.92 
+z
+" style="fill: none"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 105.836316 149.92 
+L 105.836316 11.88 
+" clip-path="url(#p916640ef35)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 261.802105 149.92 
+L 261.802105 11.88 
+" clip-path="url(#p916640ef35)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_3">
+    <path d="M 417.767895 149.92 
+L 417.767895 11.88 
+" clip-path="url(#p916640ef35)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_4">
+    <path d="M 573.733684 149.92 
+L 573.733684 11.88 
+" clip-path="url(#p916640ef35)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_5"/>
+     <g id="text_1">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="105.836316" y="165.278281" transform="rotate(-0 105.836316 165.278281)">0</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_6"/>
+     <g id="text_2">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="261.802105" y="165.278281" transform="rotate(-0 261.802105 165.278281)">1</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_7"/>
+     <g id="text_3">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="417.767895" y="165.278281" transform="rotate(-0 417.767895 165.278281)">2</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_8"/>
+     <g id="text_4">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="573.733684" y="165.278281" transform="rotate(-0 573.733684 165.278281)">3</text>
+     </g>
+    </g>
+    <g id="text_5">
+     <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="339.785" y="179.924219" transform="rotate(-0 339.785 179.924219)">x</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_9"/>
+     <g id="text_6">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="146.368901" transform="rotate(-0 36.45 146.368901)">0.00</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_10"/>
+     <g id="text_7">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="91.152901" transform="rotate(-0 36.45 91.152901)">0.50</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_11"/>
+     <g id="text_8">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="63.544901" transform="rotate(-0 36.45 63.544901)">0.75</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_12"/>
+     <g id="text_9">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="35.936901" transform="rotate(-0 36.45 35.936901)">1.00</text>
+     </g>
+    </g>
+   </g>
+   <g id="line2d_13">
+    <path d="M 43.45 142.18976 
+L 105.68035 142.18976 
+L 106.421188 141.77564 
+L 261.626644 31.881996 
+L 261.997062 142.18976 
+L 636.12 142.18976 
+L 636.12 142.18976 
+" clip-path="url(#p916640ef35)" style="fill: none; stroke-dasharray: 7.03,3.04; stroke-dashoffset: 0; stroke: #ce9145; stroke-width: 1.9"/>
+   </g>
+   <g id="line2d_14">
+    <path d="M 43.45 142.18976 
+L 261.626644 142.18976 
+L 261.997062 31.8958 
+L 417.943356 142.18976 
+L 636.12 142.18976 
+L 636.12 142.18976 
+" clip-path="url(#p916640ef35)" style="fill: none; stroke-dasharray: 7.03,3.04; stroke-dashoffset: 0; stroke: #7883ca; stroke-width: 1.9"/>
+   </g>
+   <g id="line2d_15">
+    <path d="M 43.45 142.18976 
+L 105.68035 142.18976 
+L 106.421188 141.77564 
+L 261.626644 31.881996 
+L 261.997062 31.8958 
+L 417.943356 142.18976 
+L 636.12 142.18976 
+L 636.12 142.18976 
+" clip-path="url(#p916640ef35)" style="fill: none; stroke: #177e78; stroke-width: 2.8; stroke-linecap: square"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 43.45 149.92 
+L 636.12 149.92 
+" style="fill: none; stroke: #d1d5db; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="legend_1">
+    <g id="line2d_16">
+     <path d="M 524.269688 23.668594 
+L 533.269688 23.668594 
+L 542.269688 23.668594 
+" style="fill: none; stroke-dasharray: 7.03,3.04; stroke-dashoffset: 0; stroke: #ce9145; stroke-width: 1.9"/>
+    </g>
+    <g id="text_10">
+     <text style="font: 9px 'DejaVu Sans'; text-anchor: start" x="549.469688" y="26.818594" transform="rotate(-0 549.469688 26.818594)">left contribution</text>
+    </g>
+    <g id="line2d_17">
+     <path d="M 524.269688 36.878906 
+L 533.269688 36.878906 
+L 542.269688 36.878906 
+" style="fill: none; stroke-dasharray: 7.03,3.04; stroke-dashoffset: 0; stroke: #7883ca; stroke-width: 1.9"/>
+    </g>
+    <g id="text_11">
+     <text style="font: 9px 'DejaVu Sans'; text-anchor: start" x="549.469688" y="40.028906" transform="rotate(-0 549.469688 40.028906)">right contribution</text>
+    </g>
+    <g id="line2d_18">
+     <path d="M 524.269688 50.090625 
+L 533.269688 50.090625 
+L 542.269688 50.090625 
+" style="fill: none; stroke: #177e78; stroke-width: 2.8; stroke-linecap: square"/>
+    </g>
+    <g id="text_12">
+     <!-- $B_{0,1}(x)$ -->
+     <g transform="translate(549.469688 53.240625)">
+      <text>
+       <tspan style="font: oblique 9px 'DejaVu Sans'" x="0 21.178125" y="-0.171875">Bx</tspan>
+       <tspan style="font: 6.3px 'DejaVu Sans'" x="6.174316 10.182568 13.412549" y="1.3046875">0,1</tspan>
+       <tspan style="font: 9px 'DejaVu Sans'" x="17.666895 26.504297" y="-0.171875">()</tspan>
+      </text>
+     </g>
+    </g>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p916640ef35">
+   <rect x="43.45" y="11.88" width="592.67" height="138.04"/>
+  </clipPath>
+ </defs>
+</svg>
+<figcaption>一次：在 1 处达到峰值 1，高度连续，但斜率从 +1 跳到 −1。</figcaption></figure>
+<h3>二次：两个一次帐篷，加权后变成平滑弯曲</h3>
+<div class="eq">$$B_{0,2}(x)=\frac{x}{2}B_{0,1}(x)+\frac{3-x}{2}B_{1,1}(x).$$</div>
+<p>两个帐篷分别覆盖 \([0,2]\) 和 \([1,3]\)。逐段代入：</p>
+<div class="eq">$$\begin{aligned}0\le x&lt;1:\quad B_{0,2}(x)&=\frac{x}{2}\cdot x+\frac{3-x}{2}\cdot0=\frac{x^2}{2};\\1\le x&lt;2:\quad B_{0,2}(x)&=\frac{x}{2}(2-x)+\frac{3-x}{2}(x-1)\\&=\frac{2x-x^2+4x-x^2-3}{2}=\frac{-2x^2+6x-3}{2};\\2\le x&lt;3:\quad B_{0,2}(x)&=\frac{x}{2}\cdot0+\frac{3-x}{2}(3-x)=\frac{(3-x)^2}{2}.\end{aligned}$$</div>
+<div class="eq">$$\boxed{B_{0,2}(x)=\begin{cases}\frac12x^2,&0\le x&lt;1,\\\frac12(-2x^2+6x-3),&1\le x&lt;2,\\\frac12(3-x)^2,&2\le x&lt;3,\\0,&\text{其他位置}.\end{cases}}$$</div>
+<figure><svg xmlns:xlink="http://www.w3.org/1999/xlink" width="648pt" height="194.4pt" viewBox="0 0 648 194.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-22T20:41:53.774860</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.9.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 194.4 
+L 648 194.4 
+L 648 0 
+L 0 0 
+L 0 194.4 
+z
+" style="fill: none; opacity: 0"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 43.45 149.92 
+L 636.12 149.92 
+L 636.12 11.88 
+L 43.45 11.88 
+L 43.45 149.92 
+z
+" style="fill: none"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 105.836316 149.92 
+L 105.836316 11.88 
+" clip-path="url(#p03e587f8f3)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 261.802105 149.92 
+L 261.802105 11.88 
+" clip-path="url(#p03e587f8f3)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_3">
+    <path d="M 417.767895 149.92 
+L 417.767895 11.88 
+" clip-path="url(#p03e587f8f3)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_4">
+    <path d="M 573.733684 149.92 
+L 573.733684 11.88 
+" clip-path="url(#p03e587f8f3)" style="fill: none; stroke: #dadde0; stroke-width: 0.7; stroke-linecap: square"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_5"/>
+     <g id="text_1">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="105.836316" y="165.278281" transform="rotate(-0 105.836316 165.278281)">0</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_6"/>
+     <g id="text_2">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="261.802105" y="165.278281" transform="rotate(-0 261.802105 165.278281)">1</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_7"/>
+     <g id="text_3">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="417.767895" y="165.278281" transform="rotate(-0 417.767895 165.278281)">2</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_8"/>
+     <g id="text_4">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="573.733684" y="165.278281" transform="rotate(-0 573.733684 165.278281)">3</text>
+     </g>
+    </g>
+    <g id="text_5">
+     <text style="font: 11px 'DejaVu Sans'; text-anchor: middle" x="339.785" y="179.924219" transform="rotate(-0 339.785 179.924219)">x</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_9"/>
+     <g id="text_6">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="146.368901" transform="rotate(-0 36.45 146.368901)">0.00</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_10"/>
+     <g id="text_7">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="91.152901" transform="rotate(-0 36.45 91.152901)">0.50</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_11"/>
+     <g id="text_8">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="63.544901" transform="rotate(-0 36.45 63.544901)">0.75</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_12"/>
+     <g id="text_9">
+      <text style="font: 11px 'DejaVu Sans'; text-anchor: end" x="36.45" y="35.936901" transform="rotate(-0 36.45 35.936901)">1.00</text>
+     </g>
+    </g>
+   </g>
+   <g id="line2d_13">
+    <path d="M 43.45 142.18976 
+L 112.718306 142.082254 
+L 119.756262 141.749934 
+L 126.794219 141.192745 
+L 133.832175 140.410687 
+L 140.870131 139.40376 
+L 147.908087 138.171964 
+L 154.946044 136.7153 
+L 161.984 135.033766 
+L 169.021956 133.127364 
+L 176.059912 130.996093 
+L 183.097869 128.639953 
+L 190.135825 126.058944 
+L 197.5442 123.099159 
+L 204.952575 119.890212 
+L 212.36095 116.432103 
+L 219.769325 112.724832 
+L 227.1777 108.768399 
+L 234.586075 104.562803 
+L 241.99445 100.108045 
+L 249.402825 95.404125 
+L 257.181619 90.196848 
+L 261.997062 86.973846 
+L 269.035019 87.09251 
+L 276.072975 87.436042 
+L 283.110931 88.004443 
+L 290.148888 88.797714 
+L 297.186844 89.815853 
+L 304.2248 91.058861 
+L 311.262756 92.526737 
+L 318.300712 94.219483 
+L 325.338669 96.137098 
+L 332.376625 98.279581 
+L 339.414581 100.646933 
+L 346.452537 103.239155 
+L 353.860912 106.210742 
+L 361.269287 109.431491 
+L 368.677662 112.901403 
+L 376.086038 116.620476 
+L 383.494413 120.588712 
+L 390.902787 124.80611 
+L 398.311162 129.27267 
+L 405.719538 133.988393 
+L 413.498331 139.208062 
+L 417.943356 142.18976 
+L 636.12 142.18976 
+L 636.12 142.18976 
+" clip-path="url(#p03e587f8f3)" style="fill: none; stroke-dasharray: 7.03,3.04; stroke-dashoffset: 0; stroke: #ce9145; stroke-width: 1.9"/>
+   </g>
+   <g id="line2d_14">
+    <path d="M 43.45 142.18976 
+L 261.626644 142.18976 
+L 261.997062 142.051806 
+L 269.775856 136.688246 
+L 277.55465 131.599386 
+L 285.333444 126.785228 
+L 292.741819 122.455707 
+L 300.150194 118.375349 
+L 307.558569 114.544152 
+L 314.966944 110.962117 
+L 322.375319 107.629245 
+L 329.783694 104.545535 
+L 337.192069 101.710987 
+L 344.230025 99.248953 
+L 351.267981 97.011788 
+L 358.305937 94.999492 
+L 365.343894 93.212065 
+L 372.38185 91.649506 
+L 379.419806 90.311817 
+L 386.457763 89.198996 
+L 393.495719 88.311044 
+L 400.533675 87.647961 
+L 407.571631 87.209747 
+L 414.609588 86.996402 
+L 417.572938 86.973846 
+L 417.943356 87.097926 
+L 425.72215 92.462175 
+L 433.500944 97.551723 
+L 441.279737 102.366569 
+L 448.688112 106.696746 
+L 456.096488 110.777761 
+L 463.504863 114.609613 
+L 470.913237 118.192303 
+L 478.321613 121.525831 
+L 485.729987 124.610197 
+L 493.138362 127.4454 
+L 500.176319 129.908057 
+L 507.214275 132.145845 
+L 514.252231 134.158764 
+L 521.290187 135.946815 
+L 528.328144 137.509996 
+L 535.3661 138.848309 
+L 542.404056 139.961752 
+L 549.442012 140.850327 
+L 556.479969 141.514033 
+L 563.517925 141.95287 
+L 570.555881 142.166838 
+L 580.186769 142.18976 
+L 636.12 142.18976 
+L 636.12 142.18976 
+" clip-path="url(#p03e587f8f3)" style="fill: none; stroke-dasharray: 7.03,3.04; stroke-dashoffset: 0; stroke: #7883ca; stroke-width: 1.9"/>
+   </g>
+   <g id="line2d_15">
+    <path d="M 43.45 142.18976 
+L 112.718306 142.082254 
+L 119.756262 141.749934 
+L 126.794219 141.192745 
+L 133.832175 140.410687 
+L 140.870131 139.40376 
+L 147.908087 138.171964 
+L 154.946044 136.7153 
+L 161.984 135.033766 
+L 169.021956 133.127364 
+L 176.059912 130.996093 
+L 183.097869 128.639953 
+L 190.135825 126.058944 
+L 197.5442 123.099159 
+L 204.952575 119.890212 
+L 212.36095 116.432103 
+L 219.769325 112.724832 
+L 227.1777 108.768399 
+L 234.586075 104.562803 
+L 241.99445 100.108045 
+L 249.402825 95.404125 
+L 257.181619 90.196848 
+L 270.516694 81.148142 
+L 276.072975 77.793796 
+L 281.258838 74.915973 
+L 286.4447 72.282328 
+L 291.630562 69.892863 
+L 296.816425 67.747576 
+L 302.002288 65.846469 
+L 307.18815 64.18954 
+L 312.374012 62.776791 
+L 317.559875 61.60822 
+L 322.375319 60.741758 
+L 327.190762 60.085839 
+L 332.006206 59.640461 
+L 336.82165 59.405626 
+L 341.637094 59.381333 
+L 346.452537 59.567581 
+L 351.267981 59.964372 
+L 356.083425 60.571705 
+L 360.898869 61.38958 
+L 365.714313 62.417997 
+L 370.900175 63.760981 
+L 376.086038 65.348144 
+L 381.2719 67.179487 
+L 386.457763 69.255008 
+L 391.643625 71.574708 
+L 396.829488 74.138587 
+L 402.01535 76.946645 
+L 407.201213 79.998882 
+L 412.387075 83.295298 
+L 417.943356 87.097926 
+L 425.72215 92.462175 
+L 433.500944 97.551723 
+L 441.279737 102.366569 
+L 448.688112 106.696746 
+L 456.096488 110.777761 
+L 463.504863 114.609613 
+L 470.913237 118.192303 
+L 478.321613 121.525831 
+L 485.729987 124.610197 
+L 493.138362 127.4454 
+L 500.176319 129.908057 
+L 507.214275 132.145845 
+L 514.252231 134.158764 
+L 521.290187 135.946815 
+L 528.328144 137.509996 
+L 535.3661 138.848309 
+L 542.404056 139.961752 
+L 549.442012 140.850327 
+L 556.479969 141.514033 
+L 563.517925 141.95287 
+L 570.555881 142.166838 
+L 580.186769 142.18976 
+L 636.12 142.18976 
+L 636.12 142.18976 
+" clip-path="url(#p03e587f8f3)" style="fill: none; stroke: #177e78; stroke-width: 2.8; stroke-linecap: square"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 43.45 149.92 
+L 636.12 149.92 
+" style="fill: none; stroke: #d1d5db; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="text_10">
+    <text style="font: 10px 'DejaVu Sans'; text-anchor: start" x="378.776447" y="45.0096" transform="rotate(-0 378.776447 45.0096)">(1.5, 0.75)</text>
+   </g>
+   <g id="PathCollection_1">
+    <defs>
+     <path id="m38c501a1d0" d="M 0 3 
+C 0.795609 3 1.55874 2.683901 2.12132 2.12132 
+C 2.683901 1.55874 3 0.795609 3 0 
+C 3 -0.795609 2.683901 -1.55874 2.12132 -2.12132 
+C 1.55874 -2.683901 0.795609 -3 0 -3 
+C -0.795609 -3 -1.55874 -2.683901 -2.12132 -2.12132 
+C -2.683901 -1.55874 -3 -0.795609 -3 0 
+C -3 0.795609 -2.683901 1.55874 -2.12132 2.12132 
+C -1.55874 2.683901 -0.795609 3 0 3 
+z
+" style="stroke: #177e78"/>
+    </defs>
+    <g clip-path="url(#p03e587f8f3)">
+     <use xlink:href="#m38c501a1d0" x="339.785" y="59.36576" style="fill: #177e78; stroke: #177e78"/>
+    </g>
+   </g>
+   <g id="legend_1">
+    <g id="line2d_16">
+     <path d="M 524.269688 23.668594 
+L 533.269688 23.668594 
+L 542.269688 23.668594 
+" style="fill: none; stroke-dasharray: 7.03,3.04; stroke-dashoffset: 0; stroke: #ce9145; stroke-width: 1.9"/>
+    </g>
+    <g id="text_11">
+     <text style="font: 9px 'DejaVu Sans'; text-anchor: start" x="549.469688" y="26.818594" transform="rotate(-0 549.469688 26.818594)">left contribution</text>
+    </g>
+    <g id="line2d_17">
+     <path d="M 524.269688 36.878906 
+L 533.269688 36.878906 
+L 542.269688 36.878906 
+" style="fill: none; stroke-dasharray: 7.03,3.04; stroke-dashoffset: 0; stroke: #7883ca; stroke-width: 1.9"/>
+    </g>
+    <g id="text_12">
+     <text style="font: 9px 'DejaVu Sans'; text-anchor: start" x="549.469688" y="40.028906" transform="rotate(-0 549.469688 40.028906)">right contribution</text>
+    </g>
+    <g id="line2d_18">
+     <path d="M 524.269688 50.090625 
+L 533.269688 50.090625 
+L 542.269688 50.090625 
+" style="fill: none; stroke: #177e78; stroke-width: 2.8; stroke-linecap: square"/>
+    </g>
+    <g id="text_13">
+     <!-- $B_{0,2}(x)$ -->
+     <g transform="translate(549.469688 53.240625)">
+      <text>
+       <tspan style="font: oblique 9px 'DejaVu Sans'" x="0 21.178125" y="-0.171875">Bx</tspan>
+       <tspan style="font: 6.3px 'DejaVu Sans'" x="6.174316 10.182568 13.412549" y="1.3046875">0,2</tspan>
+       <tspan style="font: 9px 'DejaVu Sans'" x="17.666895 26.504297" y="-0.171875">()</tspan>
+      </text>
+     </g>
+    </g>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p03e587f8f3">
+   <rect x="43.45" y="11.88" width="592.67" height="138.04"/>
+  </clipPath>
+ </defs>
+</svg>
+<figcaption>二次：中间区间上两个贡献叠加。峰值为 3/4；连接处的高度与斜率均连续。</figcaption></figure>
+<p>中间段可写成 \(\frac34-(x-\frac32)^2\)，所以峰值位置为 \(x=\frac32\)，峰值为 \(\frac34\)。三段导数分别是 \(x\)、\(3-2x\)、\(x-3\)。</p>
+<table><thead><tr><th>连接点</th><th>左右高度</th><th>左右斜率</th></tr></thead><tbody><tr><td>0</td><td>均为 0</td><td>均为 0</td></tr><tr><td>1</td><td>均为 1/2</td><td>均为 1</td></tr><tr><td>2</td><td>均为 1/2</td><td>均为 −1</td></tr><tr><td>3</td><td>均为 0</td><td>均为 0</td></tr></tbody></table>
+<details><summary>与“三段二次多项式 + 8 个约束”的解法对照</summary>
+<p>两端与零函数高度、斜率相接，内部两个节点也分别匹配高度与斜率，共 8 个约束。先由端点条件得到：</p>
+<div class="eq">$$p_0(x)=ax^2,\qquad p_2(x)=d(x-3)^2.$$</div>
+<p>在 1 处连接左段，得到：</p><div class="eq">$$p_1(x)=a+2a(x-1)+q(x-1)^2.$$</div>
+<p>在 2 处匹配高度和斜率：</p><div class="eq">$$3a+q=d,\qquad 2a+2q=-2d\quad\Longrightarrow\quad q=-2a,\ d=a.$$</div>
+<p>因此三段分别为 \(ax^2\)、\(a(-2x^2+6x-3)\)、\(a(3-x)^2\)。形状确定，尺度未定。递推结果对应 \(a=\frac12\)。</p>
+<p>归一化也能验证这个尺度：完整单位网格的任一单位区间内，令局部位置 \(0\le u&lt;1\)，三个非零基函数相加：</p>
+<div class="eq">$$\frac{u^2}{2}+\frac{-2u^2+2u+1}{2}+\frac{(1-u)^2}{2}=1.$$</div></details></section>
+<section id="proof"><div class="step">04 / WHY IT WORKS</div><h2>归纳证明的路线</h2>
+<p>提出递推构造后，证明它在每次升次时保留设计指标。多项式次数、支撑和非负性直接由递推式得到；最关键的是平滑性。</p>
+<h3>① 基础情形：一次帐篷连续</h3><p>零次定义给出区间开关；一次递推给出连续帐篷，所以 \(B_{i,1}\in C^0\)。在节点之外，帐篷的导数也直接满足下面导数公式的 \(k=1\) 情形。</p>
+<h3>② 先归纳证明导数公式</h3>
+<div class="eq">$$\boxed{B_{i,k}'(x)=\frac{k}{t_{i+k}-t_i}B_{i,k-1}(x)-\frac{k}{t_{i+k+1}-t_{i+1}}B_{i+1,k-1}(x).}$$</div>
+<p>假设低一次导数公式成立，对高一次递推式用乘积法则求导；代入低一次导数，再把所有项展开成 \(k-2\) 次基函数。收集系数时，多余项精确抵消，剩余项重新组成两个 \(k-1\) 次基函数。</p>
+<h3>③ 用导数公式提升平滑性</h3>
+<div class="eq">$$B_{i,k-1},B_{i+1,k-1}\in C^{k-2}\quad\Longrightarrow\quad B_{i,k}'\in C^{k-2}\quad\Longrightarrow\quad B_{i,k}\in C^{k-1}.$$</div>
+<p>严谨地说，代数求导先在节点之间成立。对于 \(k\ge2\)，递推式先保证函数连续，导数公式右侧在节点处有连续延拓，因此左右导数一致，并可继续讨论更高阶导数。</p>
+<div class="note"><strong>不能跳过的桥：</strong>仅由“低次函数乘线性权重再相加”，只能直接保留已有平滑性。多出来的一阶连续性，要靠导数公式来证明。</div>
+<h3>④ 其他指标也可归纳验证</h3>
+<ul><li><strong>次数：</strong>低次分段多项式乘一次权重，次数最多增加一。</li><li><strong>支撑：</strong>两个相邻低次支撑的并集为 \([t_i,t_{i+k+1}]\)。</li><li><strong>非负：</strong>在每项基函数非零的区域，对应权重非负。</li><li><strong>单位分解：</strong>对递推式求和并移动右项下标，同一低次基函数的两个系数之和为一。</li></ul>
+<div class="eq">$$\frac{x-t_i}{t_{i+k}-t_i}+\frac{t_{i+k}-x}{t_{i+k}-t_i}=1\quad\Longrightarrow\quad\sum_i B_{i,k}(x)=\sum_i B_{i,k-1}(x)=1.$$</div>
+<p class="muted">单位分解的求和等式限于具有完整覆盖的内部区域；不能把有限节点向量的边界项直接忽略。</p>
+<details><summary>导数公式中，具体是哪两项抵消？</summary>
+<p>记 \(A=t_{i+k}-t_i\)、\(B=t_{i+k+1}-t_{i+1}\)、\(D=t_{i+k}-t_{i+1}\)。展开后，中间基函数 \(B_{i+1,k-2}\) 的系数为：</p>
+<div class="eq">$$Q=\frac{(t_{i+k}-x)-(k-1)(x-t_i)}{AD}+\frac{-(x-t_{i+1})+(k-1)(t_{i+k+1}-x)}{BD}.$$</div>
+<p>用 \(x-t_i=A-(t_{i+k}-x)\) 和 \(t_{i+k+1}-x=B-(x-t_{i+1})\) 改写：</p>
+<div class="eq">$$\begin{aligned}Q&=\frac{k(t_{i+k}-x)-(k-1)A}{AD}+\frac{-k(x-t_{i+1})+(k-1)B}{BD}\\&=\frac{k(t_{i+k}-x)}{AD}-\frac{k-1}{D}-\frac{k(x-t_{i+1})}{BD}+\frac{k-1}{D}\\&=\frac{k(t_{i+k}-x)}{AD}-\frac{k(x-t_{i+1})}{BD}.\end{aligned}$$</div>
+<p>共享间距 \(D\) 让 \(-\frac{k-1}{D}\) 与 \(+\frac{k-1}{D}\) 抵消。这个系数与左右两端基函数的系数一起，恰好重新组成导数公式中的两个低一次基函数。</p></details>
+</section><footer>回到 KAN：<code>B_batch</code> 计算这里的基函数取值；<code>coef2curve</code> 用系数加权成曲线；<code>curve2coef</code> 根据目标取值求系数。本文停在基函数的构造与证明。<br>曲线图已内嵌；公式使用 MathJax，首次打开需要联网加载。</footer>
+</main></body></html>
