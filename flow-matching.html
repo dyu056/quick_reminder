@@ -7,10 +7,12 @@
 <link rel="stylesheet" href="assets/note.css">
 <script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre','code']}};</script>
 <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<link rel="stylesheet" href="assets/flow-matching.css">
+<script src="assets/flow-matching.js" defer></script>
 </head><body><main><a class="home-link" href="./">← 全部笔记</a>
 <header><div class="eyebrow">QUICK REMINDER / FLOW MATCHING</div><h1>Flow Matching：Chapter 3 推导速记</h1>
 <p class="lead">先规定分布如何从噪声走向数据，再构造速度；用条件速度监督，学到边缘速度。</p>
-<nav><a href="#path">3.1 概率路径</a><a href="#velocity">3.2 速度场</a><a href="#loss">3.3 训练损失</a><a href="#training">最终训练式</a></nav></header>
+<nav><a href="#path">3.1 概率路径</a><a href="#velocity">3.2 速度场</a><a href="#loss">3.3 训练损失</a><a href="#training">最终训练式</a></nav><div class="expand-controls"><button type="button" id="expand-all">展开全部推导</button><button type="button" id="collapse-all">收起全部推导</button><span>先看主线，卡住时展开中间步骤。</span></div></header>
 <p>依据：<a href="https://arxiv.org/html/2506.02070v3#S3">An Introduction to Flow Matching and Diffusion Models，v3，Chapter 3</a>，Peter Holderrieth / Ezra Erives。仅覆盖 §3.1–3.3；沿用原文从噪声到数据的时间方向。整理日期：2026-11-06。</p>
 <p><strong>记忆主线：先规定分布怎么变，再构造能实现它的速度场；用条件速度监督，学到边缘速度。</strong></p>
 <section><h2>0 · 要解决的问题</h2>
@@ -29,6 +31,7 @@ $$</div>
 <div class="eq">$$
 p_t(x)=\int p_t(x\mid z)p_{\mathrm{data}}(z)\,dz.
 $$</div>
+<details class="derivation"><summary>展开 · 两个端点为什么恰好是噪声和数据？</summary><p>把条件路径的端点代入混合积分，分别使用归一化与 Dirac 分布的筛选性质：</p><div class="eq">$$\begin{aligned}p_0(x)&=\int p_{\mathrm{init}}(x)p_{\mathrm{data}}(z)\,dz=p_{\mathrm{init}}(x),\\p_1(x)&=\int\delta_z(x)p_{\mathrm{data}}(z)\,dz=p_{\mathrm{data}}(x).\end{aligned}$$</div><p>中间时刻是许多条件分布的混合；终点则把每个数据点的质量放回它自己的位置。</p></details>
 <p>因此 \(p_0=p_{\mathrm{init}}\)，\(p_1=p_{\mathrm{data}}\)。这里容易<strong>采样</strong>，不代表容易计算密度：先抽 \(z\sim p_{\mathrm{data}}\)，再抽 \(x\sim p_t(\cdot\mid z)\) 即可。</p>
 <p><strong>贯穿全章的例子：Gaussian path。</strong></p>
 <div class="eq">$$
@@ -40,6 +43,7 @@ $$</div>
 \alpha_0=0,\quad\alpha_1=1,\qquad
 \beta_0=1,\quad\beta_1=0.
 $$</div>
+<figure class="interactive"><figcaption><strong>图 1 · 拖动时间，看条件高斯如何组成边缘路径</strong><br>玩具数据只有两个等概率终点：−2 和 +2。两条彩线是带先验权重的条件密度，深色线是它们的和。</figcaption><label>时间 t <input id="path-time" type="range" min="0" max="0.95" step="0.01" value="0.45"><output id="path-time-value"></output></label><div class="plot-scroll"><svg id="path-plot" viewBox="0 0 720 240" role="img" aria-label="两个条件高斯密度及其边缘混合密度"></svg></div><p id="path-reading" class="muted" aria-live="polite"></p><p class="muted">为了显示密度，滑块停在 0.95；时间趋于 1 时，两团分布收缩成点质量。</p></figure>
 </section>
 <section id="velocity"><h2>3.2 · 从条件速度场到边缘速度场</h2>
 <h3>① 先推条件速度：沿轨迹求导，再消掉初始噪声</h3>
@@ -55,6 +59,7 @@ u_t(x\mid z)
 =\dot\alpha_tz+\frac{\dot\beta_t}{\beta_t}(x-\alpha_tz)
 }
 $$</div>
+<details class="derivation"><summary>展开 · 从轨迹导数，逐步改写成当前位置的速度</summary><ol><li>先固定终点和初始噪声。求导时它们都不随时间变化：<div class="eq">$$x_t=\alpha_tz+\beta_t\epsilon\quad\Rightarrow\quad\dot x_t=\dot\alpha_tz+\dot\beta_t\epsilon.$$</div></li><li>但 ODE 在运行时拿到的是当前位置，而不是初始噪声；反解：<div class="eq">$$x=\alpha_tz+\beta_t\epsilon\quad\Rightarrow\quad\epsilon=\frac{x-\alpha_tz}{\beta_t}.$$</div></li><li>代入导数，并按终点和当前位置整理：<div class="eq">$$\begin{aligned}u_t(x\mid z)&=\dot\alpha_tz+\dot\beta_t\frac{x-\alpha_tz}{\beta_t}\\&=\left(\dot\alpha_t-\frac{\dot\beta_t\alpha_t}{\beta_t}\right)z+\frac{\dot\beta_t}{\beta_t}x.\end{aligned}$$</div></li></ol><div class="note">在线性调度下，当前位置速度为 \(u_t(x\mid z)=(z-x)/(1-t)\)。沿固定条件轨迹代入 \(x_t=tz+(1-t)\epsilon\)，才简化为恒定速度 \(z-\epsilon\)。</div></details>
 <p>代回采样点，则有更方便的监督目标：</p>
 <div class="eq">$$
 u_t(x_t\mid z)=\dot\alpha_tz+\dot\beta_t\epsilon.
@@ -68,6 +73,7 @@ u_t(x)=
 }
 $$</div>
 <p>权重是 \(p_t(z\mid x)\)：给定当前带噪点，各个数据终点的相对可能性。<strong>不能直接按数据先验平均条件速度。</strong></p>
+<details class="derivation"><summary>展开 · 为什么权重是后验，而不是先验？</summary><p>联合采样“先抽终点，再抽条件噪声点”给出联合密度。固定观察到的位置后，用 Bayes 公式：</p><div class="eq">$$p_t(x,z)=p_t(x\mid z)p_{\mathrm{data}}(z),\qquad p_t(z\mid x)=\frac{p_t(x\mid z)p_{\mathrm{data}}(z)}{\int p_t(x\mid z')p_{\mathrm{data}}(z')\,dz'}.$$</div><p>同一个位置可能来自不同终点；更能解释这个位置的终点，速度权重更大。下面用同一组双终点数据计算后验及边缘速度。</p><figure class="interactive"><figcaption><strong>图 2 · 移动观察位置，比较条件速度与边缘速度</strong><br>固定时间 t = 0.5。橙色指向左终点，蓝色指向右终点；深色箭头是按后验加权后的速度。</figcaption><label>当前位置 x <input id="posterior-x" type="range" min="-2.5" max="2.5" step="0.01" value="0.15"><output id="posterior-x-value"></output></label><div class="plot-scroll"><svg id="posterior-plot" viewBox="0 0 720 210" role="img" aria-label="条件速度和后验加权边缘速度箭头"></svg></div><div class="weight-bars"><div>左终点后验 <progress id="weight-left" max="1"></progress> <output id="weight-left-value"></output></div><div>右终点后验 <progress id="weight-right" max="1"></progress> <output id="weight-right-value"></output></div></div><p id="posterior-reading" aria-live="polite"></p><p class="muted">箭头共用速度比例尺；箭长表示速度，不是一次积分后的落点。后验相等时左右速度可能相互抵消。</p></figure></details>
 <h3>③ 为什么这个平均能实现边缘路径？连续性方程</h3>
 <p>在适当正则条件下，速度场实现概率路径的判据为：</p>
 <div class="eq">$$
@@ -82,6 +88,7 @@ $$</div>
 &amp;=-\nabla_x\cdot\bigl(p_t(x)u_t(x)\bigr).
 \end{aligned}
 $$</div>
+<details class="derivation"><summary>展开 · 连续性方程中的每一步变换</summary><p>以下散度只对当前位置求导。假设可交换积分与微分：</p><div class="eq">$$\begin{aligned}\partial_t p_t(x)&=\partial_t\int p_t(x\mid z)p_{\mathrm{data}}(z)\,dz\\&=\int\partial_t p_t(x\mid z)p_{\mathrm{data}}(z)\,dz\quad\text{（交换微分与积分）}\\&=-\int\nabla_x\cdot[p_t(x\mid z)u_t(x\mid z)]p_{\mathrm{data}}(z)\,dz\quad\text{（条件连续性方程）}\\&=-\nabla_x\cdot\left[\int p_t(x\mid z)u_t(x\mid z)p_{\mathrm{data}}(z)\,dz\right]\quad\text{（线性性）}\\&=-\nabla_x\cdot\left[p_t(x)\int u_t(x\mid z)\frac{p_t(x\mid z)p_{\mathrm{data}}(z)}{p_t(x)}\,dz\right]\\&=-\nabla_x\cdot[p_t(x)u_t(x)].\end{aligned}$$</div><div class="flux-diagram" role="img" aria-label="先混合条件概率通量，再得到边缘概率通量"><span>条件密度 × 条件速度<br>每条路径的概率通量</span><b>→ 对终点混合 →</b><span>边缘密度 × 边缘速度<br>同一份总概率通量</span></div><p>倒数第二步是在密度为正的地方乘除同一个边缘密度。密度为零的区域不影响按该密度采样的训练目标。</p></details>
 <p>关键是<strong>先混合概率通量，再除以密度得到速度</strong>。于是解边缘 ODE 就能得到 \(X_t\sim p_t\)，终点为数据分布。</p>
 </section>
 <section id="loss"><h2>3.3 · 从不可计算的 FM 到可训练的 CFM</h2>
@@ -102,6 +109,7 @@ $$</div>
 \mathbb E[(u_t^\theta(x))^\top u_t(x\mid z)]
 =\mathbb E[(u_t^\theta(x))^\top u_t(x)].
 $$</div>
+<details class="derivation"><summary>展开 · 平方损失展开后，为什么只有常数不同？</summary><p>简写网络预测为 \(a=u_t^\theta(x)\)，条件标签为 \(b=u_t(x\mid z)\)，边缘速度为 \(m=u_t(x)=\mathbb E[b\mid t,x]\)。所有期望均沿同一联合采样分布。</p><div class="eq">$$\begin{aligned}\mathcal L_{\mathrm{CFM}}&=\mathbb E\|a-b\|^2=\mathbb E\|a\|^2-2\mathbb E[a^\top b]+\mathbb E\|b\|^2,\\\mathcal L_{\mathrm{FM}}&=\mathbb E\|a-m\|^2=\mathbb E\|a\|^2-2\mathbb E[a^\top m]+\mathbb E\|m\|^2.\end{aligned}$$</div><p>固定时间和位置，网络预测可以移出内层条件期望：</p><div class="eq">$$\mathbb E[a^\top b]=\mathbb E\!\left[a^\top\mathbb E[b\mid t,x]\right]=\mathbb E[a^\top m].$$</div><p>相减并再用一次条件期望：</p><div class="eq">$$\begin{aligned}\mathcal L_{\mathrm{CFM}}-\mathcal L_{\mathrm{FM}}&=\mathbb E\|b\|^2-\mathbb E\|m\|^2\\&=\mathbb E\|b-m\|^2\geq 0.\end{aligned}$$</div><p>这是条件标签本身的方差，与网络参数无关。两个损失的数值可以不同，最优预测和参数梯度相同。</p><figure class="interactive"><figcaption><strong>图 3 · 改变预测，两条损失曲线始终只差一个常数</strong><br>固定一个时间和位置，两个速度标签为 −2、+2，概率为 25%、75%。其条件均值为 1，方差为 3。图中是这一位置的条件期望损失。</figcaption><label>网络预测 a <input id="loss-a" type="range" min="-3" max="4" step="0.01" value="0"><output id="loss-a-value"></output></label><div class="plot-scroll"><svg id="loss-plot" viewBox="0 0 720 260" role="img" aria-label="FM 与 CFM 两条相差常数的二次损失曲线"></svg></div><p id="loss-reading" aria-live="polite"></p></figure></details>
 <p>展开平方后，网络平方项和交叉项相同，仅目标平方项不同；等价地：</p>
 <div class="eq">$$
 \boxed{
@@ -139,6 +147,7 @@ $$</div>
 \|u_t^\theta(tz+(1-t)\epsilon)-(z-\epsilon)\|^2.
 }
 $$</div>
+<details class="derivation"><summary>展开 · 一般 Gaussian 监督如何化简成终点减噪声？</summary><div class="eq">$$\begin{aligned}u_t(x_t\mid z)&=\dot\alpha_tz+\frac{\dot\beta_t}{\beta_t}(x_t-\alpha_tz)\\&=\dot\alpha_tz+\frac{\dot\beta_t}{\beta_t}(\beta_t\epsilon)\\&=\dot\alpha_tz+\dot\beta_t\epsilon\\&=1\cdot z+(-1)\cdot\epsilon=z-\epsilon.\end{aligned}$$</div><p>最后一行才使用线性调度。采样构造标签不依赖网络参数，因此训练时只需通过网络输出对参数求导。</p></details>
 <p>每次训练：抽数据、时间和噪声 → 构造带噪点及速度标签 → 做 MSE 回归。训练不必模拟 ODE；生成时从噪声出发，用学到的速度场积分至终点。</p>
 <p><strong>两个易忘点：</strong> 条件插值是直线，不意味着学到的边缘 ODE 轨迹也是直线。含 \(1/\beta_t\) 的条件速度表达式用于 \(\beta_t&gt;0\)；坍缩到 \(\delta_z\) 的终点按极限理解，训练可直接使用不含除法的噪声参数化标签。</p>
 <p><strong>一行复原推导：</strong></p>
