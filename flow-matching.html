@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="沿 MIT 讲义 Chapter 3 推导 Flow Matching：概率路径、条件与边缘速度场、连续性方程及 FM/CFM 损失等价。">
+<title>Flow Matching：Chapter 3 推导速记 · Quick Reminder</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/note.css">
+<script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre','code']}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head><body><main><a class="home-link" href="./">← 全部笔记</a>
+<header><div class="eyebrow">QUICK REMINDER / FLOW MATCHING</div><h1>Flow Matching：Chapter 3 推导速记</h1>
+<p class="lead">先规定分布如何从噪声走向数据，再构造速度；用条件速度监督，学到边缘速度。</p>
+<nav><a href="#path">3.1 概率路径</a><a href="#velocity">3.2 速度场</a><a href="#loss">3.3 训练损失</a><a href="#training">最终训练式</a></nav></header>
+<p>依据：<a href="https://arxiv.org/html/2506.02070v3#S3">An Introduction to Flow Matching and Diffusion Models，v3，Chapter 3</a>，Peter Holderrieth / Ezra Erives。仅覆盖 §3.1–3.3；沿用原文从噪声到数据的时间方向。整理日期：2026-11-06。</p>
+<p><strong>记忆主线：先规定分布怎么变，再构造能实现它的速度场；用条件速度监督，学到边缘速度。</strong></p>
+<section><h2>0 · 要解决的问题</h2>
+<p>神经网络参数化速度场，生成时解 ODE：</p>
+<div class="eq">$$
+X_0\sim p_{\mathrm{init}},\qquad \frac{dX_t}{dt}=u_t^\theta(X_t).
+$$</div>
+<p>目标是让 \(X_1\sim p_{\mathrm{data}}\)。先找一个能做到这件事的目标速度场 \(u_t\)，再学习它。下文省略原文目标场的 \(\mathrm{target}\) 上标。</p>
+</section>
+<section id="path"><h2>3.1 · 从条件概率路径到边缘概率路径</h2>
+<p>固定一个数据点 \(z\)，构造：</p>
+<div class="eq">$$
+p_0(\cdot\mid z)=p_{\mathrm{init}},\qquad p_1(\cdot\mid z)=\delta_z.
+$$</div>
+<p>然后对数据点做混合：</p>
+<div class="eq">$$
+p_t(x)=\int p_t(x\mid z)p_{\mathrm{data}}(z)\,dz.
+$$</div>
+<p>因此 \(p_0=p_{\mathrm{init}}\)，\(p_1=p_{\mathrm{data}}\)。这里容易<strong>采样</strong>，不代表容易计算密度：先抽 \(z\sim p_{\mathrm{data}}\)，再抽 \(x\sim p_t(\cdot\mid z)\) 即可。</p>
+<p><strong>贯穿全章的例子：Gaussian path。</strong></p>
+<div class="eq">$$
+p_t(\cdot\mid z)=\mathcal N(\alpha_tz,\beta_t^2I),\qquad
+x_t=\alpha_tz+\beta_t\epsilon,\quad \epsilon\sim\mathcal N(0,I).
+$$</div>
+<p>其中 \(z,\epsilon\) 独立，调度满足：</p>
+<div class="eq">$$
+\alpha_0=0,\quad\alpha_1=1,\qquad
+\beta_0=1,\quad\beta_1=0.
+$$</div>
+</section>
+<section id="velocity"><h2>3.2 · 从条件速度场到边缘速度场</h2>
+<h3>① 先推条件速度：沿轨迹求导，再消掉初始噪声</h3>
+<p>固定 \(z,\epsilon\)，选取条件流：</p>
+<div class="eq">$$
+\psi_t(\epsilon\mid z)=\alpha_tz+\beta_t\epsilon,\qquad
+\frac{d}{dt}\psi_t(\epsilon\mid z)=\dot\alpha_tz+\dot\beta_t\epsilon.
+$$</div>
+<p>速度场的输入是当前位置 \(x\)。由 \(\epsilon=(x-\alpha_tz)/\beta_t\)，得到：</p>
+<div class="eq">$$
+\boxed{
+u_t(x\mid z)
+=\dot\alpha_tz+\frac{\dot\beta_t}{\beta_t}(x-\alpha_tz)
+}
+$$</div>
+<p>代回采样点，则有更方便的监督目标：</p>
+<div class="eq">$$
+u_t(x_t\mid z)=\dot\alpha_tz+\dot\beta_t\epsilon.
+$$</div>
+<h3>② 再做 marginalization：按后验平均速度</h3>
+<div class="eq">$$
+\boxed{
+u_t(x)=
+\int u_t(x\mid z)\frac{p_t(x\mid z)p_{\mathrm{data}}(z)}{p_t(x)}\,dz
+=\mathbb E[u_t(x\mid Z)\mid X_t=x].
+}
+$$</div>
+<p>权重是 \(p_t(z\mid x)\)：给定当前带噪点，各个数据终点的相对可能性。<strong>不能直接按数据先验平均条件速度。</strong></p>
+<h3>③ 为什么这个平均能实现边缘路径？连续性方程</h3>
+<p>在适当正则条件下，速度场实现概率路径的判据为：</p>
+<div class="eq">$$
+\partial_t p_t=-\nabla_x\cdot(p_tu_t).
+$$</div>
+<p>条件路径各自满足这个方程，所以：</p>
+<div class="eq">$$
+\begin{aligned}
+\partial_t p_t(x)
+&amp;=\int \partial_t p_t(x\mid z)p_{\mathrm{data}}(z)\,dz\\
+&amp;=-\nabla_x\cdot\int p_t(x\mid z)u_t(x\mid z)p_{\mathrm{data}}(z)\,dz\\
+&amp;=-\nabla_x\cdot\bigl(p_t(x)u_t(x)\bigr).
+\end{aligned}
+$$</div>
+<p>关键是<strong>先混合概率通量，再除以密度得到速度</strong>。于是解边缘 ODE 就能得到 \(X_t\sim p_t\)，终点为数据分布。</p>
+</section>
+<section id="loss"><h2>3.3 · 从不可计算的 FM 到可训练的 CFM</h2>
+<p>理想目标是拟合边缘速度：</p>
+<div class="eq">$$
+\mathcal L_{\mathrm{FM}}
+=\mathbb E_{t\sim U[0,1],\,x\sim p_t}
+\|u_t^\theta(x)-u_t(x)\|^2.
+$$</div>
+<p>但边缘速度包含难算的积分。改为拟合可计算的条件速度：</p>
+<div class="eq">$$
+\mathcal L_{\mathrm{CFM}}
+=\mathbb E_{t\sim U[0,1],\,z\sim p_{\mathrm{data}},\,x\sim p_t(\cdot\mid z)}
+\|u_t^\theta(x)-u_t(x\mid z)\|^2.
+$$</div>
+<p><strong>等价性的关键一步：交叉项相同。</strong> 两个损失都按上述联合采样分布取期望，利用条件期望：</p>
+<div class="eq">$$
+\mathbb E[(u_t^\theta(x))^\top u_t(x\mid z)]
+=\mathbb E[(u_t^\theta(x))^\top u_t(x)].
+$$</div>
+<p>展开平方后，网络平方项和交叉项相同，仅目标平方项不同；等价地：</p>
+<div class="eq">$$
+\boxed{
+\mathcal L_{\mathrm{CFM}}
+=\mathcal L_{\mathrm{FM}}
++\underbrace{\mathbb E\|u_t(x\mid z)-u_t(x)\|^2}_{\text{与 }\theta\text{ 无关}}.
+}
+$$</div>
+<p>因此，在期望有限且可交换微分与期望等通常条件下：</p>
+<div class="eq">$$
+\nabla_\theta\mathcal L_{\mathrm{CFM}}
+=\nabla_\theta\mathcal L_{\mathrm{FM}}.
+$$</div>
+<p><strong>监督信号是条件速度，网络学到的是边缘速度。</strong> 网络只输入时间和当前位置；同一位置对应多种条件速度时，平方损失的最优预测就是它们的条件均值。</p>
+</section>
+<section id="training"><h2>落到最常用的训练式</h2>
+<p>一般 Gaussian path：</p>
+<div class="eq">$$
+\boxed{
+\mathcal L_{\mathrm{CFM}}
+=\mathbb E_{t,z,\epsilon}
+\left\|u_t^\theta(\alpha_tz+\beta_t\epsilon)
+-(\dot\alpha_tz+\dot\beta_t\epsilon)\right\|^2.
+}
+$$</div>
+<p>取 \(\alpha_t=t,\ \beta_t=1-t\)（Gaussian CondOT path）：</p>
+<div class="eq">$$
+x_t=tz+(1-t)\epsilon,\qquad
+u_t(x_t\mid z)=z-\epsilon,
+$$</div>
+<div class="eq">$$
+\boxed{
+\mathcal L_{\mathrm{CFM}}
+=\mathbb E_{t,z,\epsilon}
+\|u_t^\theta(tz+(1-t)\epsilon)-(z-\epsilon)\|^2.
+}
+$$</div>
+<p>每次训练：抽数据、时间和噪声 → 构造带噪点及速度标签 → 做 MSE 回归。训练不必模拟 ODE；生成时从噪声出发，用学到的速度场积分至终点。</p>
+<p><strong>两个易忘点：</strong> 条件插值是直线，不意味着学到的边缘 ODE 轨迹也是直线。含 \(1/\beta_t\) 的条件速度表达式用于 \(\beta_t&gt;0\)；坍缩到 \(\delta_z\) 的终点按极限理解，训练可直接使用不含除法的噪声参数化标签。</p>
+<p><strong>一行复原推导：</strong></p>
+<div class="eq">$$
+p_t(x\mid z)\ \longrightarrow\ p_t(x)\
+\longrightarrow\ u_t(x\mid z)\
+\longrightarrow\ \mathbb E[u_t(x\mid Z)\mid x]\
+\longrightarrow\ \mathcal L_{\mathrm{FM}}\
+\overset{\text{同梯度}}{\longleftrightarrow}\ \mathcal L_{\mathrm{CFM}}.
+$$
+</div>
+</section><footer><a href="./">← 返回全部笔记</a></footer></main></body></html>
