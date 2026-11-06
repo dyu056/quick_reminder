@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="LoRA 的 rank 决定低秩支路容量，alpha 通过 alpha/r 控制缩放。包含原理图、参数量示例和常见误区。">
+<title>LoRA：rank 与 alpha 分别做什么？ · Quick Reminder</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/note.css">
+<script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre','code']}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head><body><main>
+<a class="home-link" href="./">← 全部笔记</a>
+<header><div class="eyebrow">QUICK REMINDER / DEEP LEARNING</div>
+<h1>LoRA：rank 与 alpha 分别做什么？</h1>
+<p class="lead"><strong>rank 决定低秩支路的容量；alpha 控制这条支路加回原输出时的缩放。</strong></p>
+<nav><a href="#principle">01 计算原理</a><a href="#rank">02 Rank</a><a href="#alpha">03 Alpha</a><a href="#example">04 参数示例</a><a href="#pitfalls">05 易混淆点</a></nav></header>
+<section id="principle"><div class="step">01 / PRINCIPLE</div><h2>保留原层，用低秩矩阵表示更新</h2>
+<div class="eq">$$y=Wx+b+\underbrace{\frac{\alpha}{r}BAx}_{\text{LoRA 增量}}.$$</div>
+<p>\(W\) 是原始 Linear 的权重；\(A\) 把输入投影到较低维度，\(B\) 再映射到输出维度。<strong>LoRA 不要求把已有的 \(W\) 做 SVD 分解，也不缩小原始层；它用 \(BA\) 参数化权重更新。</strong>通常冻结 \(W\)，仅训练 \(A\)、\(B\)。</p>
+<figure><svg viewBox="0 0 800 285" role="img" aria-labelledby="diagram-title diagram-desc">
+<title id="diagram-title">原始 Linear 与 LoRA 低秩支路并行</title><desc id="diagram-desc">输入一路经过原始权重 W，另一路经过降维 A、升维 B，再乘 alpha 除以 rank。两路输出相加。A 与 B 之间没有激活函数。</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#64717b"/></marker></defs>
+<g fill="none" stroke="#64717b" stroke-width="1.5" marker-end="url(#arrow)"><path d="M95 135H130V64H230"/><path d="M95 135H130V205H180"/><path d="M430 64H695V115"/><path d="M320 205H365"/><path d="M505 205H550"/><path d="M650 205H695V155"/><path d="M715 135H775"/></g>
+<g fill="#edf6f3" stroke="#b8d3c7"><rect x="15" y="110" width="80" height="50" rx="7"/><rect x="230" y="32" width="200" height="64" rx="7"/><rect x="180" y="173" width="140" height="64" rx="7"/><rect x="365" y="173" width="140" height="64" rx="7"/><rect x="550" y="173" width="100" height="64" rx="7"/><circle cx="695" cy="135" r="20"/></g>
+<g fill="#24313b" text-anchor="middle" font-size="17"><text x="55" y="141">输入 x</text><text x="330" y="60">原始 Linear</text><text x="330" y="83">W x + b</text><text x="250" y="201">A：降维</text><text x="250" y="224">输入 → rank</text><text x="435" y="201">B：升维</text><text x="435" y="224">rank → 输出</text><text x="600" y="201">乘缩放</text><text x="600" y="224">alpha / r</text><text x="695" y="141">＋</text></g>
+<text x="345" y="151" text-anchor="middle" font-size="16" fill="#64717b">A 与 B 之间没有激活函数</text>
+</svg><figcaption>图示为普通 LoRA 的 Linear 形式；基础层的 bias 已包含在原支路。</figcaption></figure>
+</section>
+<section id="rank"><div class="step">02 / CAPACITY</div><h2>Rank：决定能学多丰富的更新</h2>
+<p>若输入、输出维度分别为 \(d_{\mathrm{in}}\)、\(d_{\mathrm{out}}\)，则：</p>
+<div class="eq">$$A\in\mathbb{R}^{r\times d_{\mathrm{in}}},\qquad B\in\mathbb{R}^{d_{\mathrm{out}}\times r},\qquad \operatorname{rank}(BA)\le\min(r,d_{\mathrm{in}},d_{\mathrm{out}}).$$</div>
+<p>\(r\) 是<strong>中间维度，也是更新矩阵秩的上限</strong>，不是训练后实际秩一定等于它。增大 rank 会增加可学习空间，也增加参数量、训练显存和额外计算；不保证效果一定更好。</p>
+<div class="eq">$$N_{\mathrm{LoRA}}=r(d_{\mathrm{in}}+d_{\mathrm{out}}),\qquad N_W=d_{\mathrm{in}}d_{\mathrm{out}}.$$</div>
+<p class="muted">以上仅比较权重参数，忽略 bias。rank 决定参数形状，不能在一个已经训练好的 checkpoint 上随意切换而保持同一套 A/B。</p>
+</section>
+<section id="alpha"><div class="step">03 / SCALING</div><h2>Alpha：通过 alpha/r 调整增量幅度</h2>
+<div class="eq">$$\Delta W=\frac{\alpha}{r}BA.$$</div>
+<p><strong>在 A/B 权重不变时</strong>，alpha 越大，LoRA 增量的幅度越大；alpha 不改变 A/B 的维度或参数量。训练时它也参与缩放支路输出及相关梯度，但它不是学习率。</p>
+<div class="table-scroll"><table><thead><tr><th>rank</th><th>alpha</th><th>有效缩放</th></tr></thead><tbody>
+<tr><td>256</td><td>128</td><td>0.5</td></tr><tr><td>256</td><td>256</td><td>1</td></tr><tr><td>256</td><td>512</td><td>2</td></tr>
+</tbody></table></div>
+<p class="muted">这里采用普通 LoRA 的 \(\alpha/r\) 约定；其他变体可能使用不同规则，例如 rsLoRA。不要将不同约定直接混用。</p>
+</section>
+<section id="example"><div class="step">04 / EXAMPLE</div><h2>3072 → 3072 的 Linear，rank=256</h2>
+<p>以 DreamX 公开 AR 配置中的主 attention 投影维度为例：</p>
+<pre><code>rank: 256
+alpha: 256
+dropout: 0.0</code></pre>
+<div class="table-scroll"><table><thead><tr><th>矩阵</th><th>形状</th><th>参数量</th></tr></thead><tbody>
+<tr><td>原始 W</td><td>3072 × 3072</td><td>9,437,184</td></tr><tr><td>A</td><td>256 × 3072</td><td>786,432</td></tr><tr><td>B</td><td>3072 × 256</td><td>786,432</td></tr><tr><td>A/B 合计</td><td>—</td><td>1,572,864，约为 W 的 16.67%</td></tr>
+</tbody></table></div>
+<p>此时 \(\alpha/r=1\)，直接加上 A/B 学到的增量。<strong>这不表示 LoRA 与原支路同样强。</strong>真实贡献还取决于 A/B 权重及输入。</p>
+</section>
+<section id="pitfalls"><div class="step">05 / REMEMBER</div><h2>下次只需记住这几件事</h2>
+<ul><li><strong>rank 管容量，alpha 管缩放。</strong>前者改变参数形状，后者不改变参数量。</li>
+<li><strong>同时看 alpha/r。</strong>固定 alpha 只改 rank，会同时改变容量和缩放；若希望保持缩放为 1，可令 alpha 跟随 rank。</li>
+<li><strong>B 零初始化时，增量为零。</strong>因此即使缩放是 1，初始输出也仍等于原始 Linear；A 通常随机初始化。</li>
+<li><strong>LoRA 是权重适配方式，不等于 memory retrieval。</strong>是否获得记忆能力取决于训练任务、数据和对应推理流程，单纯挂上 LoRA 不会自动增加记忆检索。</li></ul>
+</section>
+<footer><p>记录日期：2026-11-06。来自 LoRA 源码走读中的 rank / alpha 问答。</p>
+<p>参考：<a href="https://arxiv.org/abs/2106.09685" target="_blank" rel="noopener">LoRA 原论文</a>；DreamX 官方快照中的 <a href="https://github.com/AMAP-ML/DreamX-World/blob/a1f4c6e5e45600718e5236955f2e0702e53fc275/configs/dreamx-ar/causal_camera_forcing_5b.yaml#L22" target="_blank" rel="noopener">AR 配置</a>与 <a href="https://github.com/AMAP-ML/DreamX-World/blob/a1f4c6e5e45600718e5236955f2e0702e53fc275/utils/lora_peft.py#L123" target="_blank" rel="noopener">LoRA 配置函数</a>。</p><a href="./">← 返回全部笔记</a></footer>
+</main></body></html>
