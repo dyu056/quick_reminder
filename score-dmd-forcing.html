@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="沿 World modelling 讲稿的逻辑，串起分布匹配、score matching、diffusion、DMD、Self Forcing 与 Causal Forcing。">
+<title>Score Matching → DMD → Self Forcing → Causal Forcing · Quick Reminder</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="assets/note.css">
+<script>window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['$$','$$']]},options:{skipHtmlTags:['script','noscript','style','textarea','pre','code']}};</script>
+<script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>.chain{padding:18px 22px;background:#f1f8f6;border-left:3px solid var(--accent)}.chain p{margin:8px 0}.chain b{color:var(--accent)}figure img{display:block;width:100%;height:auto}.bridge{color:var(--accent);font-weight:600}.source{font-size:13px;color:var(--muted)}.recall{font-size:18px}td{vertical-align:top}summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:4px}</style>
+</head><body><main>
+<a class="home-link" href="./">← 全部笔记</a>
+<header><div class="eyebrow">QUICK REMINDER / WORLD MODELLING</div>
+<h1>Score Matching → DMD → Self Forcing → Causal Forcing</h1>
+<p class="lead">沿着一个问题往下走：<strong>怎样学到分布、怎样从中采样、怎样采得更快，以及怎样逐段生成视频而不在训练和推理之间脱节？</strong></p>
+<p class="source">根据 Daniel Yu 的《World modelling jc》PPT 整理。第 14、16、18–19 页讲者备注提供 score 到 diffusion 的叙述，第 23–25 页图片提供 DMD 与 forcing 的公式和流程。后半段解释结合原论文补充，文末列出来源。</p>
+<nav aria-label="内容导航"><a href="#map">逻辑链</a><a href="#distribution">分布与能量</a><a href="#score">Score</a><a href="#diffusion">Diffusion</a><a href="#dmd">DMD</a><a href="#self">Self Forcing</a><a href="#causal">Causal Forcing</a><a href="#recap">一分钟回忆</a></nav>
+</header>
+<section id="map"><div class="step">00 / THE CHAIN</div><h2>先找回当时的逻辑链</h2>
+<div class="chain">
+<p><b>想让生成分布接近数据分布</b> → 从 KL / likelihood 理解生成建模。</p>
+<p><b>直接建概率有归一化难题</b> → energy model 引入配分函数；对输入求 log 梯度后，配分函数消失，得到 score。</p>
+<p><b>只在数据附近学 score，远处方向不可靠</b> → 加噪把分布铺开；大噪声提供全局方向，小噪声恢复细节；逐层退火，再推广到连续时间 diffusion。</p>
+<p><b>逐步去噪太慢</b> → DMD 用两个分布的 score 差，训练少步生成器做分布匹配。</p>
+<p><b>视频要边生成边交互</b> → 改成 causal / AR；训练时也吃自己的历史，形成 Self Forcing。</p>
+<p><b>自 rollout 解决不了错误的初始化目标</b> → Causal Forcing 先得到 AR teacher，再做因果蒸馏，最后接 self-rollout DMD。</p>
+</div>
+<p>这是一条理解路线。Score matching 是学习目标，DMD 是蒸馏方法，Self Forcing 是训练时的 rollout 方式，Causal Forcing 是一套蒸馏流程；它们处在不同层次，可以组合使用。</p>
+</section>
+<section id="distribution"><div class="step">01 / DISTRIBUTION → ENERGY</div><h2>先有分布匹配，再有具体的学习方法</h2>
+<p>设真实数据分布为 \(p_{\mathrm{data}}\)，模型分布为 \(p_\theta\)。一个起点是最小化 forward KL：</p>
+<div class="eq">$$D_{\mathrm{KL}}(p_{\mathrm{data}}\|p_\theta)=\mathbb E_{p_{\mathrm{data}}}[\log p_{\mathrm{data}}(x)]-\mathbb E_{p_{\mathrm{data}}}[\log p_\theta(x)].$$</div>
+<p>第一项与模型参数无关，所以优化它等价于最大化数据的 log likelihood。<strong>“匹配分布”是目标，maximum likelihood 是实现目标的一条路。</strong>GAN 等方法也可以从分布匹配理解，但所用的距离和训练机制不同。</p>
+<h3>为什么引入 energy model？</h3>
+<div class="eq">$$p_\theta(x)=\frac{e^{-E_\theta(x)}}{Z(\theta)},\qquad Z(\theta)=\int e^{-E_\theta(x)}\,dx.$$</div>
+<p>指数保证非负，\(Z\) 保证积分为 1。你在 PPT 里用“不能随便提出一个恒为 1 的函数”强调的就是：<strong>概率必须归一化，不能把所有样本的概率同时无约束地抬高。</strong>连续空间中密度也不要求逐点小于 1。</p>
+<p class="bridge">下一问：高维积分算不出，能否只借助局部方向来采样？</p>
+</section>
+<section id="score"><div class="step">02 / SCORE → SAMPLING</div><h2>Score 给出当前位置的 log 密度上升方向</h2>
+<div class="eq">$$s_\theta(x)=\nabla_x\log p_\theta(x)=-\nabla_x E_\theta(x).$$</div>
+<p>\(Z(\theta)\) 与输入 \(x\) 无关，因而在这个梯度中消失。注意对输入求导与对参数求导的区别：这并不意味着 energy model 的 likelihood 训练也自动绕过了配分函数。</p>
+<p>有了 score，可以用 Langevin dynamics 采样。以下采用步长 \(\eta\) 的一种约定：</p>
+<div class="eq">$$x_{k+1}=x_k+\eta s_\theta(x_k)+\sqrt{2\eta}\,\epsilon_k,\qquad \epsilon_k\sim\mathcal N(0,I).$$</div>
+<p>第一项沿高密度方向走，随机项让过程探索分布。在适当条件与足够小步长下，它近似从目标分布采样。<strong>只沿梯度爬到峰值，是优化；保留合适的噪声项，才有这里的分布采样含义。</strong></p>
+<h3>Score matching：学这个场</h3>
+<div class="eq">$$\mathcal L_{\mathrm{SM}}=\frac12\mathbb E_{x\sim p_{\mathrm{data}}}\!\left[\|s_\theta(x)-\nabla_x\log p_{\mathrm{data}}(x)\|^2\right].$$</div>
+<p>真实 score 不可直接获得。分部积分可把目标改写成包含 \(\nabla_x\!\cdot s_\theta(x)\) 的形式，但高维 trace 计算有成本。PPT 第 8–12 页从这里引出 denoising score matching。</p>
+<details><summary>展开：加噪后，为什么有了可计算的监督？</summary>
+<p>令 \(x_t=\alpha_t x_0+\sigma_t\epsilon\)，其中 \(x_0\sim p_{\mathrm{data}}\)、\(\epsilon\sim\mathcal N(0,I)\)，且 \(\sigma_t&gt;0\)。我们知道条件分布的 score：</p>
+<div class="eq">$$\nabla_{x_t}\log q_t(x_t\mid x_0)=-\frac{x_t-\alpha_t x_0}{\sigma_t^2}=-\frac{\epsilon}{\sigma_t}.$$</div>
+<div class="eq">$$\mathcal L_{\mathrm{DSM}}=\mathbb E_{t,x_0,\epsilon}\!\left[\lambda(t)\left\|s_\theta(x_t,t)+\frac{\epsilon}{\sigma_t}\right\|^2\right].$$</div>
+<p>平方误差的最优预测是条件期望，因此：</p>
+<div class="eq">$$s^*(x_t,t)=\mathbb E\!\left[-\epsilon/\sigma_t\mid x_t\right]=\nabla_{x_t}\log p_t(x_t).$$</div>
+<p>可计算的是“给定干净样本的高斯条件 score”，最终学到的是“加噪后的边缘分布 score”。加噪后的整体分布一般仍是复杂混合分布。</p>
+</details>
+</section>
+<section id="diffusion"><div class="step">03 / NOISE LEVELS → DIFFUSION</div><h2>小噪声保细节，大噪声让远处也有方向</h2>
+<p>你在第 14 页的台词抓住了核心：score matching 的期望按数据密度加权，样本集中在高密度区域，低密度区域缺乏约束。从随机初值出发时，恰好容易落在这些方向不可靠的位置。</p>
+<p>第 15 页加大噪声，让不同模态之间的区域也得到覆盖，方向更容易估计；代价是分布被抹平，细节丢失。因此第 16 页用<strong>退火 Langevin</strong>：先在大噪声分布采样，再把结果作为下一档较小噪声的初值，逐档回到数据附近。</p>
+<div class="chain"><p>大噪声分布中找整体位置 → 把样本交给较小噪声层 → 逐步恢复细节。</p></div>
+<p>第 17 页的转折是“若有无数层这样的噪声呢？”连续时间模型用 \(s_\theta(x,t)\) 表示每个时间的 score。对于前向 SDE：</p>
+<div class="eq">$$dx=f(x,t)\,dt+g(t)\,dW_t,$$</div>
+<p>对应的反向 SDE 为：</p>
+<div class="eq">$$dx=\left[f(x,t)-g(t)^2s_\theta(x,t)\right]dt+g(t)\,d\bar W_t,\qquad t:T\to0.$$</div>
+<p>这里 \(dt&lt;0\)；数值噪声尺度使用 \(\sqrt{|dt|}\)。退火 Langevin 提供多噪声层的直觉，反向 SDE 则由指定的前向过程推导，二者不应直接当作同一个更新公式。</p>
+<h3>DDPM、score 与 flow 的位置</h3>
+<p>在同一高斯扰动路径下，噪声预测与 score 可通过 \(s_\theta=-\epsilon_\theta/\sigma_t\) 转换。相应 probability-flow ODE 的速度是 \(f-\tfrac12g^2s_\theta\)。Flow matching 直接学习选定概率路径的速度场。具体等价关系依赖路径、参数化和损失权重。</p>
+<div class="note">UNet、DiT、causal DiT 是网络骨架；score / noise / velocity 是预测对象；SDE / ODE solver 是采样方式。把这几层分开，就不会把 diffusion 当成某一种网络。</div>
+<p class="bridge">下一问：现在能生成了，但每次都要走很多步，能否把采样压缩成一步或几步？</p>
+</section>
+<section id="dmd"><div class="step">04 / SCORE DIFFERENCE → DMD</div><h2>DMD：用两个 score 的差训练快速生成器</h2>
+<p>第 23 页再次回到分布匹配。设 \(x_0=G_\theta(z)\)，\(z\sim\mathcal N(0,I)\)，其输出分布为 \(p_{\mathrm{fake}}\)，目标分布为 \(p_{\mathrm{real}}\)。这次 KL 的方向与最初的 maximum likelihood 不同：</p>
+<div class="eq">$$\mathcal L_{\mathrm{DMD}}=D_{\mathrm{KL}}(p_{\mathrm{fake}}\|p_{\mathrm{real}}).$$</div>
+<p>在所需正则条件下，对生成器参数的梯度可以写为：</p>
+<div class="eq">$$\nabla_\theta\mathcal L_{\mathrm{DMD}}=\mathbb E_z\!\left[J_{G_\theta}(z)^\top\big(s_{\mathrm{fake}}(x_0)-s_{\mathrm{real}}(x_0)\big)\right].$$</div>
+<p>这里 \(J_{G_\theta}=\partial G_\theta/\partial\theta\)。梯度下降给样本的局部推动方向是 \(s_{\mathrm{real}}-s_{\mathrm{fake}}\)：<strong>借助目标分布的方向，同时校正生成分布自身的密度。</strong>只保留 real score 就改变了目标，不能当成完整的 DMD。</p>
+<figure><img src="assets/world-model/dmd.png" alt="DMD 原论文流程：生成器输出加噪，由 real score 与 fake score 计算分布匹配梯度，fake score 单独接受去噪训练。" loading="lazy"><figcaption>PPT 第 23 页所用 DMD 流程图。原始 DMD 还包含配对回归支路。</figcaption></figure>
+<h3>为什么训练时仍然要加噪？</h3>
+<p>沿用前面的多噪声 score 思路，将生成样本变为 \(x_t=\alpha_tG_\theta(z)+\sigma_t\epsilon\)，在不同噪声层比较两个分布。第 23 页的实用更新形式是：</p>
+<div class="eq">$$\nabla_\theta\mathcal L\approx\mathbb E_{z,t,\epsilon}\!\left[w_t\alpha_tJ_{G_\theta}(z)^\top\big(s_{\mathrm{fake}}(x_t,t)-s_{\mathrm{real}}(x_t,t)\big)\right].$$</div>
+<p>这是噪声层分布匹配的加权更新，不应不加说明地等同于干净分布 KL 的精确梯度。目标 teacher 提供 real score；另一个在线去噪模型拟合当前生成样本的 fake score；生成器沿 score 差更新。生成器变化后，fake-score 模型也要跟上。</p>
+<div class="note">记住训练中的三个角色：<strong>生成器负责出样本，real-score teacher 提供目标方向，fake-score 模型估计学生当前分布。</strong>部署时只需生成器。原始 DMD 的配对回归项与后续方法的初始化方案应分别理解。</div>
+<p class="source">公式与图据 PPT 第 23 页；核对：<a href="https://arxiv.org/abs/2311.18828">DMD 原论文</a>。</p>
+<p class="bridge">下一问：少步生成已经很快，但交互视频还需要“先出一段，再接着出下一段”。</p>
+</section>
+<section id="self"><div class="step">05 / AUTOREGRESSION → SELF FORCING</div><h2>Self Forcing：训练时也让模型接着自己的输出生成</h2>
+<p>视频有两个时间轴：<strong>视频轴</strong>决定按帧或 chunk 依次生成，<strong>去噪轴</strong>决定每个 chunk 内从噪声走多少步。AR 解决前者，少步蒸馏解决后者。</p>
+<div class="eq">$$p_\theta(x^{1:N}\mid c)=\prod_{i=1}^{N}p_\theta(x^i\mid x^{&lt;i},c).$$</div>
+<p>\(c\) 是文本等条件，\(x^i\) 可以是一帧或一个 chunk。关键是训练里的历史 \(x^{&lt;i}\) 从哪里来。</p>
+<div class="table-scroll"><table><thead><tr><th>方式</th><th>训练时的历史</th><th>需要记住的差别</th></tr></thead><tbody>
+<tr><td>Teacher Forcing</td><td>干净的数据历史</td><td>训练见到正确历史，推理见到自己生成的历史。</td></tr>
+<tr><td>Diffusion Forcing</td><td>对数据各帧独立采样噪声等级</td><td>覆盖多种噪声状态，但被扰动的数据历史与模型自己的错误仍有差别。</td></tr>
+<tr><td>Self Forcing</td><td>模型逐段生成的历史</td><td>训练时就走推理用的 AR rollout，对最终视频做分布匹配。</td></tr>
+</tbody></table></div>
+<figure><img src="assets/world-model/forcing.png" alt="Teacher Forcing、Diffusion Forcing 和 Self Forcing 的历史来源对照。Self Forcing 用此前自己生成的帧作为后续条件。" loading="lazy"><figcaption>PPT 第 24 页所用 Self Forcing 对照图。</figcaption></figure>
+<p>Self Forcing 把 exposure bias 的问题放到训练里处理：模型先生成第一段，缓存历史，再接着生成后续段；对这条真实 rollout 的输出施加 DMD 等视频级分布损失。Few-step 模型、KV cache 与梯度截断让训练成本可控。</p>
+<p><strong>Self Forcing 决定“拿什么历史来生成”；DMD 决定“怎样评价并更新生成分布”。</strong>Self Forcing 也可搭配其他分布损失，二者不是同义词。训练长度之外的长期漂移仍可能存在。</p>
+<p class="source">对照：<a href="https://arxiv.org/abs/2506.08009">Self Forcing 原论文</a>。</p>
+<p class="bridge">下一问：rollout 对齐了，但少步 AR 模型最开始的 ODE 蒸馏，监督目标是否符合它能看到的信息？</p>
+</section>
+<section id="causal"><div class="step">06 / INITIALIZATION → CAUSAL FORCING</div><h2>Causal Forcing：先让蒸馏 teacher 的信息范围符合因果约束</h2>
+<p>第 25 页把问题推进到初始化：双向 teacher 能用未来噪声帧决定当前帧的 ODE 终点，AR student 看不到未来。固定学生可见输入，改变未来仍可能改变监督目标。此时逐样本 MSE 的最优解会成为条件均值，出现平均化。</p>
+<details><summary>展开：为什么“整段 ODE 可逆”还不够？</summary>
+<p>在适当正则条件下，完整视频的 PF-ODE 流映射可以是一一对应的。但投影到学生只看得见的当前帧与历史后，唯一性未必保留。用 \(u\) 表示学生可见输入、\(v\) 表示缺失的未来信息，监督目标为 \(y=F(u,v)\)。若同一个 \(u\) 对应多个 \(y\)，则：</p>
+<div class="eq">$$\arg\min_g\mathbb E\|g(u)-y\|^2=\mathbb E[y\mid u].$$</div>
+<p>例如相同可见输入对应 teacher 的两个终点 \(-1\) 与 \(+1\)，且概率相同，确定性 MSE 预测会给出 \(0\)。这说明的是丢失 teacher 信息后拟合特定轨迹的问题，不表示 AR 模型不能表示多模态分布。</p>
+</details>
+<figure><img src="assets/world-model/causal-pipeline.png" alt="Self Forcing 与 Causal Forcing 初始化流程对比：先训练 AR teacher，再做 causal ODE 或 causal consistency distillation，最后 DMD with self rollout。" loading="lazy"><figcaption>PPT 第 25 页流程图：先修正 teacher / student 的信息不匹配，再做 self-rollout DMD。</figcaption></figure>
+<div class="chain"><p><b>1. Teacher-forcing AR diffusion</b>：从双向预训练模型适配出多步 AR teacher。</p><p><b>2. Causal ODE distillation</b>：在相同干净历史条件下，用 AR teacher 生成轨迹，训练少步 AR student。图中的 causal CD 是另一条蒸馏分支。</p><p><b>3. Asymmetric DMD + self rollout</b>：在学生自己生成的历史上优化视频分布。</p></div>
+<p>因果 teacher 的要求针对中间的轨迹蒸馏阶段；最终分布监督仍可使用双向 real-score teacher。“Asymmetric”保留了这种架构差异。它不要求所有训练阶段的模型一律改成 causal。</p>
+<p class="source">解释据 PPT 第 25 页及 <a href="https://arxiv.org/abs/2602.02214">Causal Forcing 原论文</a>。这里的因果性指时间信息访问约束，不等同于因果推断。</p>
+</section>
+<section id="corrections"><div class="step">07 / PRECISION</div><h2>保留直觉，同时修正讲稿中的几处简写</h2>
+<ul><li><strong>KL 与交叉熵相差数据熵。</strong>它们对模型参数的优化等价，数值通常不相等。</li>
+<li><strong>Score matching 的目标有平方范数。</strong>PPT 第 8–9 页的差值表达是速记，不能直接作为完整 loss。</li>
+<li><strong>Langevin 采样不等于寻找最大 likelihood 的单个样本。</strong>噪声项承担分布探索的作用。</li>
+<li><strong>高斯加噪不会把整个数据分布变成单个高斯。</strong>变得可解析的是给定样本的扰动核。</li>
+<li><strong>噪声 schedule 的条件取决于路径。</strong>DDPM 常见的是 \(\alpha_t^2+\sigma_t^2=1\)；线性 flow 插值可用 \(\alpha_t=1-t,\sigma_t=t\)。不要混用。</li>
+<li><strong>AR 视频生成提供 world model 的生成机制。</strong>闭环控制还需动作条件、环境接口与任务评估，单靠这套蒸馏并不保证长期物理一致性。</li></ul>
+</section>
+<section id="recap"><div class="step">08 / ONE-MINUTE RECALL</div><h2>下次只需先想起这四句</h2>
+<div class="recall"><p><strong>Score Matching：</strong>学分布的局部方向，多噪声层把方向接成从噪声到数据的采样过程。</p><p><strong>DMD：</strong>用 real / fake score 差训练快速生成器，把匹配对象放在输出分布上。</p><p><strong>Self Forcing：</strong>训练时也接着自己生成的历史往下走，对推理实际产生的视频分布施加监督。</p><p><strong>Causal Forcing：</strong>先修正 AR student 的轨迹蒸馏 teacher，再接 Self Forcing 式的分布优化。</p></div>
+<details><summary>自测：我真的找回这条链了吗？</summary><ol><li>为什么 score 不需要知道配分函数？<br>对输入求 log 梯度时，与输入无关的归一化项消失。</li><li>为什么只有小噪声不够？<br>随机初值可能落在低密度、score 约束不足的区域。</li><li>为什么 DMD 要 fake score？<br>KL 梯度需要目标分布与当前生成分布的 score 差。</li><li>为什么给历史加噪还不等于 Self Forcing？<br>扰动数据不等于让模型经历自己 rollout 产生的历史。</li><li>为什么已经 Self Forcing 还需要 Causal Forcing？<br>rollout 对齐与初始化时 teacher / student 的信息对齐是两个问题。</li></ol></details>
+</section>
+<footer><p>记录日期：2026-11-06。按原 PPT 的问题递进组织；公式补全与概念修正在正文标明。</p><p>基础阅读：<a href="https://arxiv.org/abs/1907.05600">Song &amp; Ermon：多噪声 score 与退火 Langevin（2019）</a>；<a href="https://arxiv.org/abs/2011.13456">Score-based SDE（2021）</a>。后半部分原论文链接见对应章节。配图取自用户提供的 PPT，原图归各论文作者。</p><a href="./">← 返回全部笔记</a></footer>
+</main></body></html>

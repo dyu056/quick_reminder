@@ -4,6 +4,7 @@
 
 - [网站首页](https://dyu056.github.io/quick_reminder/)
 - [Flow Matching：Chapter 3 推导速记](https://dyu056.github.io/quick_reminder/flow-matching.html)
+- [Score Matching → DMD → Self Forcing → Causal Forcing](https://dyu056.github.io/quick_reminder/score-dmd-forcing.html)
 - [LoRA：rank 与 alpha 分别做什么？](https://dyu056.github.io/quick_reminder/lora-rank-alpha.html)
 - [B 样条：从构造目标到递推证明](https://dyu056.github.io/quick_reminder/b-spline.html)
 
